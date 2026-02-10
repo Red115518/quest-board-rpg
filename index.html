@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QuestBoard RPG (Vanilla JS)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'DotGothic16', sans-serif;
+            background-color: #020617;
+            color: #f8fafc;
+            margin: 0;
+            overflow: hidden; /* Prevent body scroll, handle inside app */
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            user-select: none;
+        }
+
+        /* --- UI Components --- */
+        .pixel-corners {
+            clip-path: polygon(
+                0px 4px, 4px 4px, 4px 0px,
+                calc(100% - 4px) 0px, calc(100% - 4px) 4px, 100% 4px,
+                100% calc(100% - 4px), calc(100% - 4px) calc(100% - 4px), calc(100% - 4px) 100%,
+                4px 100%, 4px calc(100% - 4px), 0px calc(100% - 4px)
+            );
+        }
+
+        .btn {
+            transition: all 0.1s;
+            border-width: 1px;
+            border-style: solid;
+        }
+        .btn:active { transform: translateY(2px); }
+        .btn:disabled { opacity: 0.5; filter: grayscale(1); cursor: not-allowed; transform: none; }
+
+        .stone-btn {
+            background: linear-gradient(180deg, #475569 0%, #334155 100%);
+            box-shadow: 0 4px 0 #1e293b;
+            border-color: #64748b;
+            color: white;
+        }
+        .stone-btn:active { box-shadow: 0 0 0 #1e293b; }
+
+        .attack-btn {
+            background: linear-gradient(180deg, #f97316 0%, #ea580c 100%);
+            box-shadow: 0 4px 0 #9a3412;
+            border-color: #fdba74;
+            color: white;
+            text-shadow: 1px 1px 0 rgba(0,0,0,0.5);
+        }
+        .attack-btn:active { box-shadow: 0 0 0 #9a3412; }
+
+        .shop-btn {
+            background: linear-gradient(180deg, #eab308 0%, #ca8a04 100%);
+            box-shadow: 0 4px 0 #854d0e;
+            border-color: #fef08a;
+            color: white;
+        }
+        .shop-btn:active { box-shadow: 0 0 0 #854d0e; }
+
+        .delete-btn { color: #94a3b8; }
+        .delete-btn:hover { color: #ef4444; }
+
+        /* --- Animations --- */
+        @keyframes pulseRed {
+            0% { border-color: #ef4444; background-color: rgba(69, 10, 10, 0.3); }
+            50% { border-color: #ff0000; background-color: rgba(185, 28, 28, 0.5); box-shadow: 0 0 10px #ef4444; }
+            100% { border-color: #ef4444; background-color: rgba(69, 10, 10, 0.3); }
+        }
+        .animate-pulse-red { animation: pulseRed 1.5s infinite ease-in-out; }
+
+        @keyframes damageFlash {
+            0% { box-shadow: inset 0 0 0 transparent; }
+            50% { box-shadow: inset 0 0 100px #ef4444; background-color: rgba(239, 68, 68, 0.3); }
+            100% { box-shadow: inset 0 0 0 transparent; }
+        }
+        .animate-damage { animation: damageFlash 0.5s ease-out forwards; }
+
+        @keyframes floatText {
+            0% { transform: translateY(0) scale(1); opacity: 1; }
+            100% { transform: translateY(-80px) scale(1.2); opacity: 0; }
+        }
+        .floating-text {
+            position: absolute;
+            animation: floatText 1.2s ease-out forwards;
+            pointer-events: none;
+            font-weight: bold;
+            text-shadow: 2px 2px 0 #000;
+            z-index: 100;
+        }
+
+        @keyframes shakeHit {
+            0%, 100% { transform: translate(0, 0); filter: brightness(1); }
+            20% { transform: translate(-10px, 0); filter: brightness(2) sepia(1) hue-rotate(-50deg) saturate(3); }
+            40% { transform: translate(10px, 0); }
+            60% { transform: translate(-10px, 0); }
+        }
+        .animate-hit { animation: shakeHit 0.4s ease-out; }
+
+        @keyframes heroAttack {
+            0% { transform: scale(1) translateX(0); }
+            50% { transform: scale(1.2) translateX(50px); }
+            100% { transform: scale(1) translateX(0); }
+        }
+        .animate-attack { animation: heroAttack 0.3s ease-out; }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+        }
+        .animate-bounce-slow { animation: bounce 2s infinite ease-in-out; }
+
+        @keyframes moveClouds {
+            0% { left: -20%; }
+            100% { left: 120%; }
+        }
+        .cloud { position: absolute; animation: moveClouds 40s linear infinite; opacity: 0.8; }
+
+        /* Scrollbar */
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #0f172a; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #475569; }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
+    "framer-motion": "https://esm.sh/framer-motion@^12.33.0",
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "react": "https://esm.sh/react@^19.2.4"
+  }
+}
+</script>
+</head>
+<body>
+
+    <!-- Damage Overlay -->
+    <div id="damage-overlay" class="fixed inset-0 pointer-events-none z-[9999]"></div>
+
+    <!-- Battle Scene -->
+    <div class="relative w-full h-72 bg-sky-300 overflow-hidden border-b-8 border-green-800 shadow-xl shrink-0">
+        <!-- Background Elements -->
+        <div class="absolute inset-0 bg-gradient-to-b from-sky-400 via-sky-200 to-sky-100"></div>
+        <div class="cloud text-white top-4 text-6xl" style="animation-duration: 50s;">☁️</div>
+        <div class="cloud text-white/70 top-16 text-4xl" style="animation-duration: 35s; animation-delay: -15s;">☁️</div>
+        
+        <div class="absolute bottom-0 w-full h-20 bg-gradient-to-b from-green-500 to-green-700">
+            <div class="absolute bottom-2 left-[10%] text-2xl animate-bounce-slow">🌼</div>
+            <div class="absolute bottom-4 left-[30%] text-xl animate-bounce-slow" style="animation-delay: 0.5s;">🌷</div>
+            <div class="absolute bottom-3 left-[60%] text-lg animate-bounce-slow" style="animation-delay: 1s;">🌱</div>
+            <div class="absolute bottom-5 left-[80%] text-2xl animate-bounce-slow" style="animation-delay: 0.2s;">🌻</div>
+        </div>
+
+        <!-- Floating Texts Container -->
+        <div id="floating-texts" class="absolute inset-0 pointer-events-none z-50"></div>
+
+        <!-- Characters -->
+        <div class="relative w-full h-full flex items-end justify-between px-6 pb-4 z-10">
+            <!-- Hero -->
+            <div class="flex flex-col items-center justify-end w-1/3 z-20">
+                <div id="hero-sprite" class="text-[100px] leading-none filter drop-shadow-2xl cursor-pointer hover:scale-110 transition-transform animate-bounce-slow">
+                    🧚‍♂️
+                </div>
+                <div class="mt-2 text-center w-32 bg-black/60 p-1.5 rounded-lg border border-slate-500 backdrop-blur-sm">
+                    <div class="flex justify-between text-xs text-white mb-1 font-bold">
+                        <span>エルフ</span>
+                        <span id="hero-hp-text">100/100</span>
+                    </div>
+                    <div class="bg-slate-700 h-2 w-full rounded overflow-hidden">
+                        <div id="hero-hp-bar" class="bg-green-500 h-full transition-all duration-300 w-full"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Enemies -->
+            <div id="enemies-container" class="flex items-end justify-end w-2/3 h-full gap-2 pb-2">
+                <!-- Enemies injected by JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Panel -->
+    <div class="bg-slate-900 border-b-2 border-slate-700 p-3 flex justify-between items-center shadow-lg shrink-0 text-sm sm:text-base">
+        <div class="flex items-center gap-4">
+            <div class="bg-slate-800 px-3 py-1 rounded border border-slate-600">
+                <span class="text-slate-400 text-xs block">LV</span>
+                <span id="hero-level" class="text-yellow-400 font-bold text-xl">1</span>
+            </div>
+            <div class="w-32">
+                <div class="flex justify-between text-xs text-slate-400 mb-0.5">
+                    <span>EXP</span>
+                    <span id="hero-exp-text">0/100</span>
+                </div>
+                <div class="w-full h-2 bg-slate-800 border border-slate-600 rounded-full overflow-hidden">
+                    <div id="hero-exp-bar" class="bg-blue-500 h-full transition-all duration-500 w-0"></div>
+                </div>
+            </div>
+        </div>
+        <div class="flex gap-4 font-mono text-slate-200">
+            <div class="flex items-center gap-1 bg-slate-800 px-2 py-1 rounded">
+                <span class="text-yellow-400">💰</span>
+                <span id="hero-gold" class="font-bold">0 G</span>
+            </div>
+            <div class="hidden sm:flex items-center gap-1">
+                <span class="text-red-400">⚔️</span>
+                <span id="hero-atk" class="font-bold">10</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Shop Panel -->
+    <div class="bg-slate-800 p-3 mx-2 sm:mx-4 mt-2 rounded border-2 border-slate-600 flex items-center justify-between pixel-corners shrink-0">
+        <div class="flex items-center gap-2 text-slate-300 font-bold text-sm">
+            <span>🛍️ SHOP</span>
+        </div>
+        <div class="flex gap-2">
+            <button onclick="game.buyItem(20, 30)" id="btn-herb" class="btn shop-btn px-3 py-1 rounded pixel-corners text-xs flex flex-col items-center min-w-[80px]">
+                <span class="font-bold">🌿 薬草</span>
+                <span class="text-[10px] opacity-80">20G / +30HP</span>
+            </button>
+            <button onclick="game.buyItem(50, 9999)" id="btn-potion" class="btn shop-btn px-3 py-1 rounded pixel-corners text-xs flex flex-col items-center min-w-[80px]">
+                <span class="font-bold">🧪 ポーション</span>
+                <span class="text-[10px] opacity-80">50G / MAX</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Task List Area -->
+    <div class="flex-1 flex flex-col bg-slate-900 px-2 sm:px-4 py-2 w-full max-w-3xl mx-auto overflow-hidden">
+        <!-- Input -->
+        <form onsubmit="game.addTask(event)" class="flex gap-2 bg-slate-800 p-2 rounded border border-slate-600 mb-2 shrink-0">
+            <input type="text" id="task-input" placeholder="クエスト名（タスク）..." class="flex-1 bg-slate-900 border border-slate-600 p-2 text-white text-sm rounded focus:outline-none focus:border-yellow-500" required>
+            <input type="date" id="date-input" class="bg-slate-900 border border-slate-600 p-2 text-white text-sm rounded focus:outline-none focus:border-yellow-500 w-32 cursor-pointer">
+            <button type="submit" class="btn stone-btn px-4 rounded font-bold flex items-center justify-center">
+                <span>➕</span>
+            </button>
+        </form>
+
+        <!-- List (Fixed Height + Scroll) -->
+        <div id="task-list" class="flex-1 h-80 overflow-y-auto space-y-2 pr-1 custom-scrollbar pb-8 bg-slate-950/30 rounded p-2 border border-slate-800/50">
+            <!-- Tasks injected here -->
+        </div>
+    </div>
+
+    <div class="bg-slate-950 text-slate-600 text-[10px] text-center py-1">QuestBoard RPG (Vanilla JS) • Elf Edition</div>
+
+    <!-- GAME LOGIC -->
+    <script>
+        // --- CONSTANTS ---
+        const HERO_EMOJI = "🧚‍♂️";
+        const ENEMIES_DATA = [
+            { name: "Slime", emoji: "💧" }, { name: "Bat", emoji: "🦇" },
+            { name: "Goblin", emoji: "👺" }, { name: "Skeleton", emoji: "💀" },
+            { name: "Orc", emoji: "👹" }, { name: "Wolf", emoji: "🐺" },
+            { name: "Ghost", emoji: "👻" }
+        ];
+        const BOSSES_DATA = [
+            { name: "Dragon", emoji: "🐉" }, { name: "Demon", emoji: "👿" },
+            { name: "Golem", emoji: "🗿" }, { name: "Kraken", emoji: "🦑" }
+        ];
+        const BASE_EXP = 100;
+        const DAMAGE_OVERDUE = 20;
+
+        // --- STATE ---
+        const initialState = {
+            hero: { level: 1, exp: 0, expToNext: 100, atk: 12, maxHp: 100, currentHp: 100, gold: 0 },
+            enemies: [],
+            tasks: []
+        };
+
+        class Game {
+            constructor() {
+                this.state = this.loadState() || initialState;
+                this.today = new Date().toISOString().split('T')[0];
+                
+                // Initialize logic
+                if (this.state.enemies.length === 0) {
+                    this.spawnEnemies();
+                }
+                
+                // DOM Elements
+                this.els = {
+                    heroSprite: document.getElementById('hero-sprite'),
+                    heroHpText: document.getElementById('hero-hp-text'),
+                    heroHpBar: document.getElementById('hero-hp-bar'),
+                    heroLevel: document.getElementById('hero-level'),
+                    heroExpText: document.getElementById('hero-exp-text'),
+                    heroExpBar: document.getElementById('hero-exp-bar'),
+                    heroGold: document.getElementById('hero-gold'),
+                    heroAtk: document.getElementById('hero-atk'),
+                    enemiesContainer: document.getElementById('enemies-container'),
+                    taskList: document.getElementById('task-list'),
+                    taskInput: document.getElementById('task-input'),
+                    dateInput: document.getElementById('date-input'),
+                    damageOverlay: document.getElementById('damage-overlay'),
+                    floatingTexts: document.getElementById('floating-texts')
+                };
+
+                // Initial Date Input
+                this.els.dateInput.min = this.today;
+
+                this.checkOverduePenalty();
+                this.render();
+            }
+
+            // --- SAVE / LOAD ---
+            saveState() {
+                localStorage.setItem('qb_state_vjs', JSON.stringify(this.state));
+            }
+
+            loadState() {
+                const s = localStorage.getItem('qb_state_vjs');
+                return s ? JSON.parse(s) : null;
+            }
+
+            // --- LOGIC ---
+            checkOverduePenalty() {
+                const overdueCount = this.state.tasks.filter(t => t.deadline && t.deadline < this.today).length;
+                if (overdueCount > 0) {
+                    setTimeout(() => {
+                        const dmg = overdueCount * DAMAGE_OVERDUE;
+                        this.damageHero(dmg);
+                        this.floatText(`期限切れペナルティ! -${dmg}HP`, 'text-red-500 text-xl', 50, 50);
+                    }, 1000);
+                }
+            }
+
+            spawnEnemies() {
+                const level = this.state.hero.level;
+                const isBoss = level % 10 === 0;
+                const count = isBoss ? 1 : Math.min(Math.floor((level - 1) / 2) + 1, 4);
+                const baseHp = Math.floor(20 * Math.pow(1.15, level - 1));
+
+                this.state.enemies = [];
+                for (let i = 0; i < count; i++) {
+                    const pool = isBoss ? BOSSES_DATA : ENEMIES_DATA;
+                    const tmpl = pool[Math.floor(Math.random() * pool.length)];
+                    this.state.enemies.push({
+                        id: Date.now() + i,
+                        name: isBoss ? `BOSS: ${tmpl.name}` : `${tmpl.name} Lv.${level}`,
+                        emoji: tmpl.emoji,
+                        maxHp: isBoss ? baseHp * 5 : baseHp,
+                        currentHp: isBoss ? baseHp * 5 : baseHp,
+                        isBoss: isBoss
+                    });
+                }
+                this.saveState();
+            }
+
+            addTask(e) {
+                e.preventDefault();
+                const text = this.els.taskInput.value.trim();
+                const date = this.els.dateInput.value;
+                if (!text) return;
+
+                this.state.tasks.push({
+                    id: Date.now().toString(),
+                    text: text,
+                    deadline: date
+                });
+
+                this.els.taskInput.value = '';
+                this.els.dateInput.value = '';
+                this.saveState();
+                this.renderTasks();
+            }
+
+            deleteTask(id) {
+                this.state.tasks = this.state.tasks.filter(t => t.id !== id);
+                this.saveState();
+                this.renderTasks();
+            }
+
+            attackTask(id) {
+                // 1. Hero Animation
+                this.els.heroSprite.classList.add('animate-attack');
+                setTimeout(() => this.els.heroSprite.classList.remove('animate-attack'), 300);
+
+                // 2. Remove Task
+                this.state.tasks = this.state.tasks.filter(t => t.id !== id);
+                this.saveState();
+                this.renderTasks();
+
+                // 3. Battle Logic
+                const targets = this.state.enemies.filter(e => e.currentHp > 0);
+                if (targets.length === 0) {
+                    this.floatText("敵がいません！", "text-gray-400");
+                    return;
+                }
+
+                const target = targets[0];
+                const damage = this.state.hero.atk;
+                
+                // Crit logic
+                let finalDamage = damage;
+                let isCrit = false;
+                if (this.state.hero.level >= 5 && Math.random() < 0.2) {
+                    finalDamage *= 2;
+                    isCrit = true;
+                    this.floatText("CRITICAL!!", "text-red-500 text-3xl font-bold", 50, 30);
+                }
+
+                target.currentHp = Math.max(0, target.currentHp - finalDamage);
+                
+                // Visuals
+                this.floatText(`${finalDamage}`, isCrit ? "text-red-500 text-4xl" : "text-white text-3xl", 60 + Math.random()*20, 40);
+                const enemyEl = document.getElementById(`enemy-${target.id}`);
+                if (enemyEl) {
+                    enemyEl.classList.add('animate-hit');
+                    setTimeout(() => enemyEl.classList.remove('animate-hit'), 400);
+                }
+
+                // Gold Reward
+                const gold = Math.floor(Math.random() * 20) + 15;
+                this.state.hero.gold += gold;
+                setTimeout(() => this.floatText(`+${gold} G`, "text-yellow-400 font-bold", 70, 60), 200);
+
+                // Check Victory
+                if (this.state.enemies.every(e => e.currentHp === 0)) {
+                    setTimeout(() => {
+                        this.floatText("VICTORY!", "text-yellow-300 text-4xl font-bold", 50, 50);
+                        this.gainExp(BASE_EXP);
+                        setTimeout(() => {
+                            this.spawnEnemies();
+                            this.render();
+                        }, 2000);
+                    }, 500);
+                }
+
+                this.saveState();
+                this.render();
+            }
+
+            gainExp(amount) {
+                this.state.hero.exp += amount;
+                this.floatText(`EXP +${amount}`, "text-cyan-300 font-bold", 50, 70);
+                
+                if (this.state.hero.exp >= this.state.hero.expToNext) {
+                    this.state.hero.exp -= this.state.hero.expToNext;
+                    this.state.hero.level++;
+                    this.state.hero.expToNext = Math.floor(100 * Math.pow(1.2, this.state.hero.level - 1));
+                    this.state.hero.atk = Math.floor(10 + this.state.hero.level * 2.5);
+                    this.state.hero.maxHp = Math.floor(100 + this.state.hero.level * 15);
+                    this.state.hero.currentHp = this.state.hero.maxHp;
+                    this.floatText("LEVEL UP!", "text-yellow-300 text-4xl font-bold", 50, 20);
+                }
+                this.saveState();
+                this.render();
+            }
+
+            damageHero(amount) {
+                this.state.hero.currentHp = Math.max(0, this.state.hero.currentHp - amount);
+                this.els.damageOverlay.classList.remove('animate-damage');
+                void this.els.damageOverlay.offsetWidth; // trigger reflow
+                this.els.damageOverlay.classList.add('animate-damage');
+                this.saveState();
+                this.render();
+            }
+
+            buyItem(cost, heal) {
+                if (this.state.hero.gold < cost) {
+                    this.floatText("ゴールドが足りません", "text-gray-400");
+                    return;
+                }
+                if (this.state.hero.currentHp >= this.state.hero.maxHp) {
+                    this.floatText("HPは満タンです", "text-gray-400");
+                    return;
+                }
+
+                this.state.hero.gold -= cost;
+                const oldHp = this.state.hero.currentHp;
+                this.state.hero.currentHp = Math.min(this.state.hero.maxHp, this.state.hero.currentHp + heal);
+                const healed = this.state.hero.currentHp - oldHp;
+                
+                this.floatText(`回復 +${healed}`, "text-green-400 font-bold", 50, 50);
+                this.floatText(`-${cost} G`, "text-yellow-400", 70, 50);
+                this.saveState();
+                this.render();
+            }
+
+            // --- RENDER ---
+            floatText(text, colorClass, x = 50, y = 50) {
+                const el = document.createElement('div');
+                el.className = `floating-text ${colorClass || 'text-white'}`;
+                el.innerText = text;
+                el.style.left = `${x}%`;
+                el.style.top = `${y}%`;
+                this.els.floatingTexts.appendChild(el);
+                setTimeout(() => el.remove(), 1200);
+            }
+
+            render() {
+                // Hero
+                const h = this.state.hero;
+                this.els.heroHpText.innerText = `${h.currentHp}/${h.maxHp}`;
+                this.els.heroHpBar.style.width = `${(h.currentHp / h.maxHp) * 100}%`;
+                this.els.heroHpBar.className = `h-full transition-all duration-300 w-full ${h.currentHp < h.maxHp * 0.3 ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`;
+                
+                this.els.heroLevel.innerText = h.level;
+                this.els.heroExpText.innerText = `${h.exp}/${h.expToNext}`;
+                this.els.heroExpBar.style.width = `${(h.exp / h.expToNext) * 100}%`;
+                this.els.heroGold.innerText = `${h.gold} G`;
+                this.els.heroAtk.innerText = h.atk;
+
+                // Buttons state
+                document.getElementById('btn-herb').disabled = h.gold < 20 || h.currentHp >= h.maxHp;
+                document.getElementById('btn-potion').disabled = h.gold < 50 || h.currentHp >= h.maxHp;
+
+                // Enemies
+                this.renderEnemies();
+                this.renderTasks();
+            }
+
+            renderEnemies() {
+                this.els.enemiesContainer.innerHTML = '';
+                // Victory Message
+                if (this.state.enemies.every(e => e.currentHp <= 0)) {
+                    this.els.enemiesContainer.innerHTML = `
+                        <div class="absolute right-4 top-1/2 -translate-y-1/2 bg-black/70 p-4 rounded-xl border-2 border-yellow-400 text-center animate-bounce z-50 backdrop-blur-sm">
+                            <div class="text-yellow-400 font-bold text-2xl mb-1">VICTORY!</div>
+                            <div class="text-xs text-white">Next Area...</div>
+                        </div>`;
+                    return;
+                }
+
+                this.state.enemies.forEach(e => {
+                    if (e.currentHp <= 0) return; // Dead enemies hidden
+                    const hpPct = (e.currentHp / e.maxHp) * 100;
+                    
+                    const el = document.createElement('div');
+                    el.className = "relative flex flex-col items-center w-1/4 mx-1 mb-4 z-10";
+                    el.id = `enemy-${e.id}`;
+                    el.innerHTML = `
+                        <div class="w-full h-1.5 bg-slate-900 mb-1 pixel-corners overflow-hidden border border-white/30">
+                            <div class="bg-red-500 h-full transition-all duration-300" style="width: ${hpPct}%"></div>
+                        </div>
+                        <div class="text-6xl filter drop-shadow-lg ${e.isBoss ? 'scale-125 z-20' : ''} animate-bounce-slow">
+                            ${e.emoji}
+                        </div>
+                        <p class="text-[10px] mt-1 text-center truncate w-full px-1 bg-black/50 rounded text-white font-bold border border-slate-600/50">
+                            ${e.name}
+                        </p>
+                    `;
+                    this.els.enemiesContainer.appendChild(el);
+                });
+            }
+
+            renderTasks() {
+                this.els.taskList.innerHTML = '';
+                if (this.state.tasks.length === 0) {
+                    this.els.taskList.innerHTML = `
+                        <div class="text-center text-slate-500 mt-20 flex flex-col items-center">
+                            <span class="text-4xl mb-2 opacity-50">🏕️</span>
+                            <p>現在、クエストはありません</p>
+                            <p class="text-xs mt-2 text-yellow-600">タスクを追加して冒険に出よう！</p>
+                        </div>`;
+                    return;
+                }
+
+                // Sort: Overdue first
+                const sorted = [...this.state.tasks].sort((a, b) => {
+                    if (a.deadline && b.deadline) return a.deadline.localeCompare(b.deadline);
+                    if (a.deadline) return -1;
+                    if (b.deadline) return 1;
+                    return 0;
+                });
+
+                sorted.forEach(t => {
+                    const isOverdue = t.deadline && t.deadline < this.today;
+                    const el = document.createElement('div');
+                    // Add animate-pulse-red if overdue
+                    el.className = `flex items-center justify-between p-3 rounded border-2 pixel-corners transition-all mb-2 
+                        ${isOverdue ? 'animate-pulse-red bg-red-950/20 border-red-500' : 'bg-slate-800 border-slate-600 hover:border-slate-500'}`;
+                    
+                    el.innerHTML = `
+                        <div class="flex-1 mr-2 min-w-0">
+                            <div class="flex items-center gap-2">
+                                ${isOverdue ? '<span class="text-red-500 animate-bounce">⚠️</span>' : ''}
+                                <span class="font-sans text-sm truncate ${isOverdue ? 'text-red-300 font-bold' : 'text-slate-200'}">${t.text}</span>
+                            </div>
+                            ${t.deadline ? `
+                                <div class="text-[10px] flex items-center gap-1 mt-1 ${isOverdue ? 'text-red-400 font-bold' : 'text-slate-500'}">
+                                    📅 ${t.deadline} ${isOverdue ? '(期限切れ!)' : ''}
+                                </div>
+                            ` : ''}
+                        </div>
+                        <div class="flex items-center gap-2 shrink-0">
+                            <button onclick="game.attackTask('${t.id}')" class="btn attack-btn px-3 py-1.5 font-bold rounded text-xs flex items-center gap-1">
+                                ⚔️ 攻撃
+                            </button>
+                            <button onclick="game.deleteTask('${t.id}')" class="btn delete-btn p-1.5">
+                                🗑️
+                            </button>
+                        </div>
+                    `;
+                    this.els.taskList.appendChild(el);
+                });
+            }
+        }
+
+        // Start Game
+        const game = new Game();
+    </script>
+</body>
+</html>

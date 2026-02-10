@@ -1,0 +1,5 @@
+{
+  "name": "QuestBoard",
+  "description": "An RPG-style ToDo application where completing tasks defeats monsters and levels up your hero.",
+  "requestFramePermissions": []
+}
